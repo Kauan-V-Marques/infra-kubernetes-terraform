@@ -1,0 +1,37 @@
+{{- $fullname := include "almox.fullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-web
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+data:
+  # Substitui o nginx.conf da imagem: porta sem privilégio (8080) e sem proxy para a API,
+  # porque quem separa / e /api é o HTTPRoute
+  default.conf: |
+    server {
+      listen 8080;
+      server_name _;
+      root /usr/share/nginx/html;
+
+      add_header X-Content-Type-Options nosniff always;
+      add_header X-Frame-Options DENY always;
+      add_header Referrer-Policy same-origin always;
+
+      location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+      }
+
+      location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Content-Type-Options nosniff always;
+        try_files $uri =404;
+      }
+
+      location / {
+        try_files $uri /index.html;
+      }
+    }

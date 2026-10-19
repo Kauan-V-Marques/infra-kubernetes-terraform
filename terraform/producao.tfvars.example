@@ -1,0 +1,18 @@
+# Exemplo de ambiente real: cluster gerenciado, imagens num registry e certificado de verdade.
+# (Não é aplicado na CI; mostra o que muda entre os ambientes.)
+kube_context = "producao"
+hostname     = "almox.exemplo.com.br"
+
+# O Traefik ganha um Service LoadBalancer do provedor de nuvem
+gateway_node_ports = null
+# Certificado emitido pelo cert-manager/ACME no Secret "tls-publico" do namespace gateway
+tls_autoassinado = false
+
+imagens = {
+  api = "ghcr.io/kauan-v-marques/almoxarifado-api"
+  web = "ghcr.io/kauan-v-marques/almoxarifado-web"
+}
+versao = "1.0.0"
+
+replicas      = { api_min = 3, api_max = 10, web = 3 }
+tamanho_banco = "20Gi"

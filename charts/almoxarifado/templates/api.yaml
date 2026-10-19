@@ -1,0 +1,161 @@
+{{- $fullname := include "almox.fullname" . -}}
+{{- $secret := include "almox.secretName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  # Troca uma réplica por vez, sem nunca ficar abaixo do número desejado
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "almox.selector" (dict "ctx" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "almox.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "almox.podSecurityContext" 1000 | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "almox.selector" (dict "ctx" . "component" "api") | nindent 14 }}
+      # Espera o PostgreSQL aceitar conexões antes de subir a API
+      initContainers:
+        - name: aguarda-banco
+          image: {{ include "almox.image" (dict "name" "postgres" "image" .Values.postgres.image) }}
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          command: ["sh", "-c", "until pg_isready -q -h {{ $fullname }}-postgres -p 5432; do sleep 2; done"]
+          securityContext:
+            {{- include "almox.containerSecurityContext" . | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+      containers:
+        - name: api
+          image: {{ include "almox.image" (dict "name" "api" "image" .Values.api.image) }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3333
+          env:
+            - name: PORT
+              value: "3333"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: {{ $secret }}, key: DATABASE_URL }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ $secret }}, key: JWT_SECRET }
+            - name: CORS_ORIGIN
+              value: https://{{ .Values.hostname }}
+            - name: LOGIN_RATE_LIMIT
+              value: {{ .Values.api.loginRateLimit | quote }}
+            # Atrás do Gateway: o IP do cliente vem do X-Forwarded-For
+            - name: TRUST_PROXY
+              value: "true"
+            - name: SEED_DEMO
+              value: {{ .Values.api.seedDemo | quote }}
+          # Migrations rodam na subida: o startupProbe dá esse tempo antes do liveness valer
+          startupProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          # Dá tempo do Gateway tirar o pod da rotação antes do SIGTERM
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "almox.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    {{- include "almox.selector" (dict "ctx" . "component" "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: 3333
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "almox.selector" (dict "ctx" . "component" "api") | nindent 6 }}
+{{- with .Values.api.autoscaling }}
+{{- if .enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullname }}-api
+  labels:
+    {{- include "almox.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $fullname }}-api
+  minReplicas: {{ .minReplicas }}
+  maxReplicas: {{ .maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .targetCPUUtilization }}
+  behavior:
+    # Sobe rápido num pico, desce devagar para não ficar oscilando
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- end }}

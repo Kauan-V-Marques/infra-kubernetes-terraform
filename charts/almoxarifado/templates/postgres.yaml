@@ -1,0 +1,107 @@
+{{- $fullname := include "almox.fullname" . -}}
+{{- $secret := include "almox.secretName" . -}}
+{{- with .Values.postgres }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-postgres
+  labels:
+    {{- include "almox.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ $fullname }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "almox.selector" (dict "ctx" $ "component" "postgres") | nindent 6 }}
+  # Apagar o release ou reduzir réplicas não apaga os dados
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        {{- include "almox.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      automountServiceAccountToken: false
+      # Desligamento limpo: o PostgreSQL termina o checkpoint antes do SIGKILL
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # 70 = usuário postgres da imagem Alpine
+        {{- include "almox.podSecurityContext" 70 | nindent 8 }}
+      containers:
+        - name: postgres
+          image: {{ include "almox.image" (dict "name" "postgres" "image" .image) }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .database }}
+            - name: POSTGRES_USER
+              value: {{ .user }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ $secret }}, key: POSTGRES_PASSWORD }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", {{ .user | quote }}, "-d", {{ .database | quote }}]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-q", "-h", "127.0.0.1", "-U", {{ .user | quote }}, "-d", {{ .database | quote }}]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          securityContext:
+            {{- include "almox.containerSecurityContext" $ | nindent 12 }}
+          volumeMounts:
+            # Na imagem 18, o PGDATA fica em /var/lib/postgresql/18/docker
+            - name: dados
+              mountPath: /var/lib/postgresql
+            - name: socket
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: socket
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: dados
+        labels:
+          {{- include "almox.selector" (dict "ctx" $ "component" "postgres") | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .storage.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .storage.size }}
+---
+# Headless: o nome resolve direto para o pod do StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-postgres
+  labels:
+    {{- include "almox.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    {{- include "almox.selector" (dict "ctx" $ "component" "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

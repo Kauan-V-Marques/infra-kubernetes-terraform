@@ -1,0 +1,41 @@
+{{- $fullname := include "almox.fullname" . -}}
+# helm test: confere de dentro do cluster que os serviços respondem
+# e que a NetworkPolicy impede qualquer pod que não seja a API de abrir o banco
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $fullname }}-teste-conexoes
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: teste
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    # 100 = curl_user da imagem curlimages/curl
+    {{- include "almox.podSecurityContext" 100 | nindent 4 }}
+  containers:
+    - name: teste
+      image: curlimages/curl:8.22.0
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "API:"; curl -fsS http://{{ $fullname }}-api:3333/api/health; echo
+          echo "Front:"; curl -fsS http://{{ $fullname }}-web/ | grep -q '<div id="root">' && echo ok
+          echo "Banco a partir de um pod que não é a API (precisa ser bloqueado):"
+          set +e
+          curl -s -o /dev/null --connect-timeout 3 http://{{ $fullname }}-postgres:5432/
+          codigo=$?
+          set -e
+          # 28 = tempo esgotado, 7 = conexão recusada. Qualquer outro código = conectou no banco
+          if [ "$codigo" -eq 28 ] || [ "$codigo" -eq 7 ]; then echo "bloqueado (curl $codigo)"; else echo "ABERTO (curl $codigo)"; exit 1; fi
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { cpu: 100m, memory: 32Mi }
+      securityContext:
+        {{- include "almox.containerSecurityContext" . | nindent 8 }}

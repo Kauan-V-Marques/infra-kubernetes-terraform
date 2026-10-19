@@ -1,0 +1,17 @@
+apiVersion: v2
+name: almoxarifado
+description: Almoxarifado da equipe de robótica (React + Fastify + PostgreSQL) no Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/Kauan-V-Marques/infra-kubernetes-terraform
+sources:
+  - https://github.com/Kauan-V-Marques/almoxarifado-robotica
+maintainers:
+  - name: Kauan Victor Marques
+    url: https://github.com/Kauan-V-Marques
+keywords:
+  - almoxarifado
+  - gateway-api
+  - postgresql

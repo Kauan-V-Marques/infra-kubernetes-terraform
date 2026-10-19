@@ -1,0 +1,10 @@
+Almoxarifado instalado no namespace {{ .Release.Namespace }}.
+
+Endereço: https://{{ .Values.hostname }}
+{{- if .Values.api.seedDemo }}
+Login de exemplo: capitao@almox.dev / robotica123
+{{- end }}
+
+Acompanhar:
+  kubectl -n {{ .Release.Namespace }} get pods,svc,httproute,hpa,pdb
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

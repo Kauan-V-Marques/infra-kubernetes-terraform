@@ -1,0 +1,100 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validacao:
+    name: validação (sem cluster)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ferramentas (versões fixas, SHA-256 conferido)
+        run: scripts/instalar-ferramentas.sh helm kubeconform terraform trivy
+
+      - name: Chart Helm (lint, kubeconform e casos que precisam ser recusados)
+        run: scripts/validar-chart.sh
+
+      - name: Terraform (formatação, validação e testes com providers simulados)
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive -diff
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
+      - name: Segurança dos manifests e do Terraform (Trivy)
+        run: |
+          # Relatório completo, e a CI só para em HIGH/CRITICAL
+          trivy config --quiet render/ terraform/
+          trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 render/ terraform/
+
+  kind:
+    name: deploy num cluster de verdade (kind)
+    needs: validacao
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Código da aplicação
+        uses: actions/checkout@v5
+        with:
+          repository: Kauan-V-Marques/almoxarifado-robotica
+          path: app
+
+      - name: Ferramentas (versões fixas, SHA-256 conferido)
+        run: scripts/instalar-ferramentas.sh kind kubectl helm terraform trivy
+
+      - name: Cluster kind com 3 nós + CRDs da Gateway API
+        run: scripts/criar-cluster.sh
+
+      - name: Imagens da API e do front (tag = commit da aplicação)
+        run: scripts/construir-imagens.sh app
+
+      - name: Vulnerabilidades das imagens (Trivy, informativo)
+        continue-on-error: true
+        run: |
+          trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed "almoxarifado-api:$TAG"
+          trivy image --quiet --severity HIGH,CRITICAL --ignore-unfixed "almoxarifado-web:$TAG"
+
+      - name: terraform apply (plataforma + aplicação)
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -var-file=kind.tfvars -var "versao=$TAG"
+
+      - name: helm test (de dentro do cluster)
+        run: helm test almoxarifado -n almox --logs
+
+      - name: Teste de fumaça (de fora, pelo Gateway) e falhas provocadas
+        run: scripts/teste-fumaca.sh
+
+      - name: Sem drift (um plan depois do apply não muda nada)
+        working-directory: terraform
+        run: terraform plan -detailed-exitcode -input=false -var-file=kind.tfvars -var "versao=$TAG"
+
+      - name: Diagnóstico
+        if: failure()
+        run: |
+          kubectl get nodes,pods,svc,pvc,hpa -A -o wide || true
+          kubectl get gateway,httproute -A -o yaml || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          kubectl -n almox describe pods | tail -200 || true
+          kubectl -n almox logs -l app.kubernetes.io/instance=almoxarifado --all-containers --prefix --tail=100 || true
+          kubectl -n gateway logs -l app.kubernetes.io/name=traefik --tail=100 || true
+
+      - name: terraform destroy (o ciclo completo funciona)
+        working-directory: terraform
+        run: terraform destroy -auto-approve -input=false -var-file=kind.tfvars -var "versao=$TAG"

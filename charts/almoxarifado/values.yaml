@@ -1,0 +1,65 @@
+# Endereço público da aplicação (HTTPRoute e CORS da API)
+hostname: almox.localhost
+
+# Secret criado fora do chart (pelo Terraform), com as chaves:
+#   POSTGRES_PASSWORD, DATABASE_URL e JWT_SECRET
+# Assim nenhuma senha passa pelos values nem fica no Git.
+existingSecret: ""
+
+api:
+  image:
+    repository: almoxarifado-api
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  # Carrega a equipe de exemplo se o banco estiver vazio (só em ambientes de teste)
+  seedDemo: false
+  loginRateLimit: 10
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilization: 70
+
+web:
+  image:
+    repository: almoxarifado-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { cpu: 200m, memory: 64Mi }
+
+postgres:
+  image:
+    repository: postgres
+    tag: 18.6-alpine3.24
+    pullPolicy: IfNotPresent
+  database: almox
+  user: almox
+  storage:
+    size: 1Gi
+    # Vazio = StorageClass padrão do cluster
+    storageClass: ""
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+# Gateway API: as rotas se penduram num Gateway da plataforma (outro namespace)
+gateway:
+  enabled: true
+  name: publico
+  namespace: gateway
+  httpsListener: websecure
+  # Rota extra no listener HTTP que só redireciona para HTTPS
+  redirectHttp: true
+  httpListener: web
+
+networkPolicy:
+  enabled: true
+  # Namespace de onde vem o tráfego do Gateway
+  gatewayNamespace: gateway

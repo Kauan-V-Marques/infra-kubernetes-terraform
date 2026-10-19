@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "almox.fullname" . -}}
+# Por padrão nenhum pod do release recebe conexões; as regras abaixo liberam só o necessário
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-nega-tudo
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Ingress"]
+---
+# Front e API: só o Gateway (e o pod de teste do Helm) chegam neles
+{{- range $component := list "web" "api" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-{{ $component }}
+  labels:
+    {{- include "almox.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "almox.selector" (dict "ctx" $ "component" $component) | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.gatewayNamespace }}
+        - podSelector:
+            matchLabels:
+              {{- include "almox.selector" (dict "ctx" $ "component" "teste") | nindent 14 }}
+      ports:
+        - port: http
+---
+{{- end }}
+# Banco: só a API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-postgres
+  labels:
+    {{- include "almox.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "almox.selector" (dict "ctx" . "component" "postgres") | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "almox.selector" (dict "ctx" . "component" "api") | nindent 14 }}
+      ports:
+        - port: postgres
+{{- end }}
