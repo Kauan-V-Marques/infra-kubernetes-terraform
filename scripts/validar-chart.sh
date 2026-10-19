@@ -35,9 +35,10 @@ recusa "nome de banco inválido" "${VALORES[@]}" --set postgres.database=almox-p
 
 # Com o HPA ligado o Deployment não fixa réplicas (senão cada deploy desfaria a escala)
 deployment_api() {
-  helm template almoxarifado "$CHART" "${VALORES[@]}" "$@" \
-    | awk 'BEGIN { RS = "\n---\n" } /kind: Deployment/ && /name: almoxarifado-api\n/'
+  helm template almoxarifado "$CHART" "${VALORES[@]}" "$@" --show-only templates/api.yaml \
+    | sed -n '/^kind: Deployment$/,/^---$/p'
 }
+deployment_api | grep -q '^  name: almoxarifado-api$' || falha "Deployment da API não encontrado no template"
 if deployment_api | grep -q '^  replicas:'; then falha "Deployment com réplicas fixas brigando com o HPA"; fi
 deployment_api --set api.autoscaling.enabled=false --set api.replicas=3 | grep -q '^  replicas: 3$' \
   || falha "réplicas fixas sem o HPA"
