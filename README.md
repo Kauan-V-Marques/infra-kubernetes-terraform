@@ -1,10 +1,28 @@
-# Infra do Almoxarifado: Kubernetes, Helm e Terraform
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0D1117,50:1F6FEB,100:58A6FF&height=110&section=header" alt="" width="100%">
+</p>
 
-![CI](https://github.com/Kauan-V-Marques/infra-kubernetes-terraform/actions/workflows/ci.yml/badge.svg)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-1.34-326CE5?logo=kubernetes&logoColor=white)
-![Terraform](https://img.shields.io/badge/Terraform-1.16-844FBA?logo=terraform&logoColor=white)
-![Helm](https://img.shields.io/badge/Helm-3-0F1689?logo=helm&logoColor=white)
-![Gateway API](https://img.shields.io/badge/Gateway%20API-v1.6-326CE5)
+<h1 align="center">Infra do Almoxarifado: Kubernetes, Helm e Terraform</h1>
+
+<p align="center"><b>Kubernetes · Helm · Terraform · Gateway API · testado em cluster real na CI</b></p>
+
+<p align="center">
+  <a href="https://github.com/Kauan-V-Marques/infra-kubernetes-terraform/actions/workflows/ci.yml"><img src="https://github.com/Kauan-V-Marques/infra-kubernetes-terraform/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Kubernetes-1.34-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes">
+  <img src="https://img.shields.io/badge/Terraform-1.16-844FBA?logo=terraform&logoColor=white" alt="Terraform">
+  <img src="https://img.shields.io/badge/Helm-3-0F1689?logo=helm&logoColor=white" alt="Helm">
+  <img src="https://img.shields.io/badge/Gateway%20API-v1.6-326CE5" alt="Gateway API">
+</p>
+
+<p align="center">
+  <a href="#arquitetura">Arquitetura</a> ·
+  <a href="#o-que-a-ci-prova">O que a CI prova</a> ·
+  <a href="#decisões">Decisões</a> ·
+  <a href="#como-rodar-localmente">Como rodar localmente</a> ·
+  <a href="#estrutura">Estrutura</a>
+</p>
+
+---
 
 Deploy do [almoxarifado-robotica](https://github.com/Kauan-V-Marques/almoxarifado-robotica) (React + API Fastify + PostgreSQL) num cluster Kubernetes. A **plataforma** (Gateway, TLS, métricas) e a **aplicação** (namespace, segredos, chart Helm) são provisionadas com **Terraform**.
 
@@ -142,3 +160,15 @@ On every push, CI validates the chart (lint, kubeconform, negative cases via `va
 Hardening: Pod Security "restricted", read-only root filesystems, NetworkPolicies, PDBs, `preStop` hooks, startup probes, immutable image tags, and checksum-verified tool downloads. Running with multiple replicas surfaced three bugs in the app (concurrent migrations, rate limiting behind a proxy, and the process crashing when the database dropped connections). All three were fixed upstream with tests.
 
 </details>
+
+---
+
+<p align="center">
+  Feito por <a href="https://github.com/Kauan-V-Marques"><b>Kauan Victor Marques</b></a> ·
+  <a href="https://kauan-v-marques.github.io/curriculo/">Currículo</a> ·
+  <a href="https://github.com/Kauan-V-Marques?tab=repositories">Mais projetos</a>
+</p>
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0D1117,50:1F6FEB,100:58A6FF&height=80&section=footer" alt="" width="100%">
+</p>
